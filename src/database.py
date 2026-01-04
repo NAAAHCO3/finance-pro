@@ -2,7 +2,7 @@ import streamlit as st
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from contextlib import contextmanager # <--- 1. IMPORTAÇÃO NOVA
+from contextlib import contextmanager  # <--- 1. Importação necessária
 import os
 
 # Tenta pegar a URL do banco dos segredos do Streamlit
@@ -33,7 +33,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 # --- AQUI ESTAVA O PROBLEMA ---
-@contextmanager # <--- 2. ADICIONAR ESTE DECORADOR
+@contextmanager  # <--- 2. Decorador que transforma a função em um gerenciador de contexto (with)
 def get_db():
     db = SessionLocal()
     try:
