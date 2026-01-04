@@ -46,31 +46,42 @@ def login_screen():
         
         tab_login, tab_reg = st.tabs(["Acessar", "Registrar"])
         
+        # --- LOGIN ---
         with tab_login:
             with st.form("login_form"):
                 username = st.text_input("Usuário")
                 password = st.text_input("Senha", type="password")
+                
                 if st.form_submit_button("Entrar", use_container_width=True, type="primary"):
-                    with get_db() as db:
-                        user = get_user_by_username(db, username)
-                        if user and verify_password(password, user.password_hash):
-                            st.session_state.logged_in = True
-                            st.session_state.user_id = user.id
-                            st.session_state.username = user.username
-                            st.rerun()
-                        else:
-                            st.error("Credenciais inválidas.")
+                    if not username or not password:
+                        st.warning("⚠️ Preencha usuário e senha.")
+                    else:
+                        with get_db() as db:
+                            user = get_user_by_username(db, username)
+                            if user and verify_password(password, user.password_hash):
+                                st.session_state.logged_in = True
+                                st.session_state.user_id = user.id
+                                st.session_state.username = user.username
+                                st.rerun()
+                            else:
+                                st.error("❌ Credenciais inválidas.")
         
+        # --- REGISTRO ---
         with tab_reg:
             with st.form("register_form"):
                 new_user = st.text_input("Usuário")
                 new_pass = st.text_input("Senha", type="password")
+                
                 if st.form_submit_button("Criar Conta", use_container_width=True):
-                    with get_db() as db:
-                        if create_user(db, new_user, "email@fake.com", new_pass):
-                            st.success("Sucesso! Faça login.")
-                        else:
-                            st.error("Usuário já existe.")
+                    # VALIDAÇÃO IMPORTANTE: Evita erro de hash vazio
+                    if not new_user or not new_pass:
+                        st.warning("⚠️ Por favor, digite um usuário e uma senha.")
+                    else:
+                        with get_db() as db:
+                            if create_user(db, new_user, "email@fake.com", new_pass):
+                                st.success("✅ Conta criada! Faça login na aba ao lado.")
+                            else:
+                                st.error("❌ Esse usuário já existe.")
 
 # ======================================================
 # DASHBOARD PRINCIPAL
@@ -175,7 +186,7 @@ def dashboard_screen():
                 # --- LÓGICA INTELIGENTE DE GRÁFICO ---
                 # Se tiver mais de 5 categorias, usa Barras Horizontais para não poluir
                 if len(df_gasto) > 5:
-                    # Ordena: Menor para Maior (o Plotly plota de baixo pra cima, então o maior fica no topo)
+                    # Ordena: Menor para Maior
                     df_gasto = df_gasto.sort_values(by="amount", ascending=True)
                     
                     fig = px.bar(
@@ -188,17 +199,16 @@ def dashboard_screen():
                         color_discrete_sequence=px.colors.qualitative.Pastel
                     )
                     
-                    # Formatação das Barras
                     fig.update_traces(
-                        texttemplate='R$ %{x:.2s}', # Formato resumido (ex: 1.2k) ou use %{x:,.2f}
+                        texttemplate='R$ %{x:.2s}', # Formato resumido
                         textposition='auto'
                     )
                     
                     fig.update_layout(
-                        showlegend=True,
+                        showlegend=False, # Legenda desativada para barras (polui menos)
                         margin=dict(t=10, b=10, l=10, r=10),
                         height=350,
-                        xaxis=dict(showgrid=False, showticklabels=False, color="white"), # Esconde eixo X
+                        xaxis=dict(showgrid=False, showticklabels=False, color="white"),
                         yaxis=dict(showgrid=False, color="white"),
                         paper_bgcolor="rgba(0,0,0,0)",
                         plot_bgcolor="rgba(0,0,0,0)",
@@ -207,7 +217,7 @@ def dashboard_screen():
                     st.plotly_chart(fig, use_container_width=True)
 
                 else:
-                    # Se tiver 5 ou menos, mantém o Donut Chart (Bonito e minimalista)
+                    # Se tiver 5 ou menos, mantém o Donut Chart
                     fig_pizza = go.Figure(data=[go.Pie(
                         labels=df_gasto['category'], 
                         values=df_gasto['amount'], 
@@ -223,7 +233,7 @@ def dashboard_screen():
                         annotations=[dict(
                             text=f'R$ {gasto:,.0f}', 
                             x=0.5, y=0.5, 
-                            font_size=30, 
+                            font_size=25, 
                             showarrow=False, 
                             font_color="white"
                         )],
@@ -266,7 +276,7 @@ def dashboard_screen():
                 st.info("Sem movimentações.")
 
         # 5. Radar Financeiro (IA)
-        st.subheader("🕵️‍♂️ Radar Financeiro")
+        st.subheader("🕵️‍♂️ Radar Financeiro (IA)")
         anomalias = srv_ml.detectar_anomalias(df_filtrado)
         
         if not anomalias.empty:
