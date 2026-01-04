@@ -2,41 +2,35 @@ import streamlit as st
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from contextlib import contextmanager  # <--- 1. Importação necessária
 import os
 
-# Tenta pegar a URL do banco dos segredos do Streamlit
+# 1. Configuração da URL (Mantivemos igual)
 try:
     SQLALCHEMY_DATABASE_URL = st.secrets["DATABASE_URL"]
-    
-    # Fix para compatibilidade do driver PostgreSQL (postgres:// -> postgresql://)
     if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
         SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
-        
-except FileNotFoundError:
-    # Fallback para local se não houver secrets
-    SQLALCHEMY_DATABASE_URL = "sqlite:///./finance.db"
-except Exception:
+except:
     SQLALCHEMY_DATABASE_URL = "sqlite:///./finance.db"
 
-# Cria a engine
+# 2. Cria a Engine
 if "sqlite" in SQLALCHEMY_DATABASE_URL:
-    engine = create_engine(
-        SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-    )
+    engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 else:
-    # Configuração para PostgreSQL (Nuvem)
     engine = create_engine(SQLALCHEMY_DATABASE_URL, pool_pre_ping=True)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 Base = declarative_base()
 
-# --- AQUI ESTAVA O PROBLEMA ---
-@contextmanager  # <--- 2. Decorador que transforma a função em um gerenciador de contexto (with)
+# 3. MUDANÇA TOTAL AQUI: Classe de Contexto
+# Isso evita o TypeError "generator object" de uma vez por todas
+class DBConnection:
+    def __enter__(self):
+        self.db = SessionLocal()
+        return self.db
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.db.close()
+
+# Função simples que chama a classe
 def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    return DBConnection()
