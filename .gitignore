@@ -1,0 +1,13 @@
+# Banco de dados local
+finance.db
+*.db
+
+# Pastas de ambiente virtual e cache (NUNCA suba isso)
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Segredos e Configurações locais
+.env
+.streamlit/secrets.toml
