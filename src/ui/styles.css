@@ -1,0 +1,60 @@
+/* Fonte Global */
+html, body, [class*="css"] {
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+    color: #e0e0e0;
+}
+
+/* Limpa o Header padrão do Streamlit (as listras coloridas) */
+header[data-testid="stHeader"] {
+    background-color: rgba(0,0,0,0);
+}
+
+/* Sidebar mais escura e elegante */
+[data-testid="stSidebar"] {
+    background-color: #111111;
+    border-right: 1px solid #222;
+}
+
+/* Métricas (KPIs) com estilo "Card Flutuante" */
+[data-testid="stMetric"] {
+    background-color: #1e1e1e;
+    padding: 15px 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+    border: 1px solid #333;
+    transition: transform 0.2s;
+}
+
+[data-testid="stMetric"]:hover {
+    transform: translateY(-2px);
+    border-color: #555;
+}
+
+[data-testid="stMetricLabel"] {
+    font-size: 0.9rem;
+    color: #888;
+}
+
+[data-testid="stMetricValue"] {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+/* Gráficos Plotly sem fundo branco */
+.js-plotly-plot .plotly .main-svg {
+    background: rgba(0,0,0,0) !important;
+}
+
+/* Divisores mais sutis */
+hr {
+    border-color: #333;
+}
+
+/* Botões */
+button[kind="primary"] {
+    background-color: #6c5ce7 !important; /* Roxo moderno */
+    color: white !important;
+    border-radius: 8px;
+    font-weight: 600;
+}
