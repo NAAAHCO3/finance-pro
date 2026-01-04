@@ -73,12 +73,15 @@ def login_screen():
                 new_pass = st.text_input("Senha", type="password")
                 
                 if st.form_submit_button("Criar Conta", use_container_width=True):
-                    # VALIDAÇÃO IMPORTANTE: Evita erro de hash vazio
+                    # Validação de campos vazios
                     if not new_user or not new_pass:
                         st.warning("⚠️ Por favor, digite um usuário e uma senha.")
                     else:
                         with get_db() as db:
-                            if create_user(db, new_user, "email@fake.com", new_pass):
+                            # CORREÇÃO CRÍTICA: Gera e-mail único para evitar travamento do banco
+                            email_unico = f"{new_user.strip().lower()}@finance.pro"
+                            
+                            if create_user(db, new_user, email_unico, new_pass):
                                 st.success("✅ Conta criada! Faça login na aba ao lado.")
                             else:
                                 st.error("❌ Esse usuário já existe.")
@@ -175,7 +178,7 @@ def dashboard_screen():
 
         st.markdown("---")
 
-        # 4. Gráficos Principais (COM A LÓGICA NOVA DE BARRAS)
+        # 4. Gráficos Principais (Lógica Inteligente: Donut vs Barra)
         c_chart1, c_chart2 = st.columns([1, 2])
 
         with c_chart1:
@@ -183,10 +186,8 @@ def dashboard_screen():
             df_gasto = df_filtrado[df_filtrado["type"] == "gasto"]
             
             if not df_gasto.empty:
-                # --- LÓGICA INTELIGENTE DE GRÁFICO ---
                 # Se tiver mais de 5 categorias, usa Barras Horizontais para não poluir
                 if len(df_gasto) > 5:
-                    # Ordena: Menor para Maior
                     df_gasto = df_gasto.sort_values(by="amount", ascending=True)
                     
                     fig = px.bar(
@@ -199,13 +200,10 @@ def dashboard_screen():
                         color_discrete_sequence=px.colors.qualitative.Pastel
                     )
                     
-                    fig.update_traces(
-                        texttemplate='R$ %{x:.2s}', # Formato resumido
-                        textposition='auto'
-                    )
+                    fig.update_traces(texttemplate='R$ %{x:.2s}', textposition='auto')
                     
                     fig.update_layout(
-                        showlegend=False, # Legenda desativada para barras (polui menos)
+                        showlegend=False,
                         margin=dict(t=10, b=10, l=10, r=10),
                         height=350,
                         xaxis=dict(showgrid=False, showticklabels=False, color="white"),
