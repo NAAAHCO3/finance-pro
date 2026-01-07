@@ -22,8 +22,8 @@ class TransactionService:
         user_id: int,
         tipo: str,
         valor_total: Any,
-        category_id: int,
-        account_id: int,
+        categoria_nome: str,  # ALTERADO: Recebe Nome (str) em vez de ID
+        conta_nome: str = "Carteira", # ALTERADO: Padrão "Carteira" se não informado
         descricao: str = "",
         data_compra: Optional[date] = None,
         data_pagamento: Optional[date] = None,
@@ -31,6 +31,7 @@ class TransactionService:
     ) -> None:
         """
         Registra transações, suportando parcelamento automático.
+        Resolve automaticamente Nomes -> IDs para evitar erros.
         """
         tipo_normalizado = self._validar_tipo(tipo)
         valor_num = self._normalizar_valor(valor_total)
@@ -40,7 +41,33 @@ class TransactionService:
         dt_pagamento_inicial = data_pagamento if data_pagamento else dt_compra
 
         try:
-            # LÓGICA DE PARCELAMENTO
+            # 1. RESOLVER CATEGORIA (Nome -> ID)
+            # Busca pelo nome. Se não existir, cria automaticamente.
+            cat = self.db.query(Category).filter(
+                Category.user_id == user_id, 
+                Category.name == categoria_nome
+            ).first()
+            
+            if not cat:
+                cat = Category(user_id=user_id, name=categoria_nome, type=tipo_normalizado)
+                self.db.add(cat)
+                self.db.commit()
+                self.db.refresh(cat)
+            
+            # 2. RESOLVER CONTA (Nome -> ID)
+            # Busca pelo nome. Se não existir, cria a conta padrão.
+            acc = self.db.query(Account).filter(
+                Account.user_id == user_id, 
+                Account.name == conta_nome
+            ).first()
+            
+            if not acc:
+                acc = Account(user_id=user_id, name=conta_nome, balance=0.0)
+                self.db.add(acc)
+                self.db.commit()
+                self.db.refresh(acc)
+
+            # 3. CRIAÇÃO DAS TRANSAÇÕES (Lógica Original Mantida)
             if parcelas > 1:
                 valor_parcela = valor_num / parcelas
                 
@@ -54,11 +81,11 @@ class TransactionService:
                         user_id=user_id,
                         type=tipo_normalizado,
                         amount=valor_parcela,
-                        category_id=category_id,
-                        account_id=account_id,
+                        category_id=cat.id, # Usa o ID resolvido
+                        account_id=acc.id,  # Usa o ID resolvido
                         description=desc_final,
-                        date=dt_compra,           # Data da compra mantém a original
-                        payment_date=dt_vencimento, # Data do pagamento avança
+                        date=dt_compra,           
+                        payment_date=dt_vencimento,
                         installment=tag_parcela
                     )
                     self.db.add(nova)
@@ -68,8 +95,8 @@ class TransactionService:
                     user_id=user_id,
                     type=tipo_normalizado,
                     amount=valor_num,
-                    category_id=category_id,
-                    account_id=account_id,
+                    category_id=cat.id, # Usa o ID resolvido
+                    account_id=acc.id,  # Usa o ID resolvido
                     description=descricao,
                     date=dt_compra,
                     payment_date=dt_pagamento_inicial,
@@ -82,7 +109,7 @@ class TransactionService:
 
         except Exception as e:
             self.db.rollback()
-            logger.exception("Erro ao registrar")
+            logger.exception("Erro ao registrar transação")
             raise e
 
     def df_usuario(self, user_id: int) -> pd.DataFrame:
