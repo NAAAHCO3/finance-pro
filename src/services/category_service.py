@@ -61,12 +61,11 @@ class CategoryService:
             return False
 
     # ======================================================
-    # MÉTODOS EXISTENTES (MANTIDOS E MELHORADOS)
+    # MÉTODOS EXISTENTES
     # ======================================================
     def listar_por_tipo(self, user_id: int, tipo: str) -> List[Category]:
         """
         Lista categorias do usuário filtrando por tipo (renda ou gasto).
-        Retorna OBJETOS Category completos.
         """
         tipo = str(tipo).lower().strip()
 
@@ -98,7 +97,6 @@ class CategoryService:
         categoria_nome = str(categoria).strip()
 
         if tipo not in self.TIPOS_VALIDOS:
-            logger.warning("Tentativa de criar tipo inválido: %s", tipo)
             return False
 
         if not categoria_nome:
@@ -116,8 +114,7 @@ class CategoryService:
             )
 
             if existente:
-                logger.info("Categoria '%s' já existe. Ignorando.", categoria_nome)
-                return False # Retorna False para o front avisar o usuário, sem crashar
+                return False
 
             nova_categoria = Category(
                 user_id=user_id,
@@ -128,11 +125,8 @@ class CategoryService:
             self.db.add(nova_categoria)
             self.db.commit()
             self.db.refresh(nova_categoria)
-
-            logger.info("Categoria adicionada: %s", categoria_nome)
             return True
 
         except Exception:
             self.db.rollback()
-            logger.exception("Erro ao adicionar categoria no banco")
             return False
