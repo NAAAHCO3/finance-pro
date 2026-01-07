@@ -30,12 +30,13 @@ def main():
         srv_account = AccountService(db)
         srv_cat = CategoryService(db)
 
+        # Carregando dados iniciais
         contas = srv_account.listar(user_id)
         cats_renda = srv_cat.listar_por_tipo(user_id, "renda")
         cats_gasto = srv_cat.listar_por_tipo(user_id, "gasto")
 
         # ==================================================
-        # ABA 1: NOVO LANÇAMENTO (UX Reativa)
+        # ABA 1: NOVO LANÇAMENTO
         # ==================================================
         with tab_lan:
             if not contas:
@@ -45,7 +46,7 @@ def main():
             else:
                 st.markdown("#### Registrar Movimentação")
                 
-                # --- ZONA REATIVA (FORA DO FORMULÁRIO) ---
+                # Drivers Principais
                 c_tipo, c_valor, c_opts = st.columns([1, 1, 2])
                 
                 with c_tipo:
@@ -58,7 +59,6 @@ def main():
                 with c_opts:
                     st.write("Opções:")
                     c_chk1, c_chk2 = st.columns(2)
-                    
                     label_pago = "Pago / Recebido Hoje" if tipo_db == "gasto" else "Recebido Hoje"
                     pago_agora = c_chk1.checkbox(label_pago, value=True)
                     
@@ -79,48 +79,33 @@ def main():
                             valor_parc = valor / parcelas
                             st.info(f"💳 **{parcelas}x** de **R$ {valor_parc:,.2f}**")
 
-                # Definição de Listas
+                # Listas dinâmicas
                 lista_cats = cats_gasto if tipo_db == "gasto" else cats_renda
                 aviso_vazio = "⚠️ Nenhuma categoria cadastrada para este tipo."
 
                 st.divider()
 
-                # --- FORMULÁRIO DE ENVIO ---
+                # Formulário de envio
                 with st.form("form_transacao", clear_on_submit=True):
                     c1, c2, c3 = st.columns(3)
-                    
                     with c1:
                         dt_compra = st.date_input("Data da Compra", value=date.today())
-
                     with c2:
                         if not lista_cats:
                             st.warning(aviso_vazio)
                             categoria = None
                         else:
-                            categoria = st.selectbox(
-                                "Categoria", 
-                                lista_cats, 
-                                format_func=lambda x: x.name, 
-                                key=f"sel_{tipo_db}"
-                            )
-                    
+                            categoria = st.selectbox("Categoria", lista_cats, format_func=lambda x: x.name, key=f"sel_{tipo_db}")
                     with c3:
                         conta = st.selectbox("Conta / Carteira", contas, format_func=lambda x: x.name)
 
-                    # Data de Pagamento
                     dt_pagamento = dt_compra 
                     if not pago_agora:
-                        dt_pagamento = st.date_input(
-                            "Data do Vencimento / Pagamento Real", 
-                            value=date.today(),
-                            help="Data futura quando o dinheiro sairá da conta"
-                        )
+                        dt_pagamento = st.date_input("Data do Vencimento", value=date.today())
                     
                     descricao = st.text_input("Descrição (Opcional)", placeholder="Ex: Mercado, Almoço...")
 
-                    submitted = st.form_submit_button("✅ Salvar Lançamento", use_container_width=True, type="primary")
-
-                    if submitted:
+                    if st.form_submit_button("✅ Salvar Lançamento", use_container_width=True, type="primary"):
                         if categoria and conta:
                             try:
                                 srv_trans.registrar(
@@ -134,13 +119,13 @@ def main():
                                     data_pagamento=dt_pagamento,
                                     parcelas=int(parcelas)
                                 )
-                                st.toast("Lançamento salvo!", icon="✅")
-                                time.sleep(0.5)
+                                st.toast("Lançamento salvo com sucesso!", icon="✅")
+                                time.sleep(1) # Dá tempo de ver a mensagem
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Erro ao salvar: {e}")
                         else:
-                            st.error("Preencha todos os campos obrigatórios.")
+                            st.error("Preencha todos os campos.")
 
         # ==================================================
         # ABA 2: EXTRATO COMPLETO
@@ -154,16 +139,16 @@ def main():
             df = srv_trans.df_usuario(user_id)
             
             if not df.empty:
-                with st.expander("🗑️ Excluir Lançamento"):
-                    col_del, col_btn_del = st.columns([3, 1])
-                    del_id = col_del.number_input("ID para excluir", min_value=1, step=1)
-                    if col_btn_del.button("Excluir", use_container_width=True):
+                with st.expander("🗑️ Opções Avançadas"):
+                    c_del1, c_del2 = st.columns([3, 1])
+                    del_id = c_del1.number_input("ID do lançamento para excluir", min_value=1, step=1)
+                    if c_del2.button("Excluir Lançamento", type="secondary"):
                         if srv_trans.deletar(user_id, del_id):
-                            st.success(f"ID {del_id} removido.")
-                            time.sleep(0.5)
+                            st.success(f"Lançamento {del_id} excluído.")
+                            time.sleep(1)
                             st.rerun()
                         else:
-                            st.error("ID não encontrado.")
+                            st.error("Lançamento não encontrado.")
 
                 st.dataframe(
                     df,
@@ -175,7 +160,7 @@ def main():
                         "category": "Categoria",
                         "amount": st.column_config.NumberColumn("Valor", format="R$ %.2f"),
                         "account_name": "Conta",
-                        "installment": st.column_config.TextColumn("Parc.")
+                        "installment": "Parc."
                     },
                     hide_index=True,
                     use_container_width=True
@@ -184,81 +169,103 @@ def main():
                 st.info("Nenhum lançamento encontrado.")
 
         # ==================================================
-        # ABA 3: CONFIGURAÇÕES (AGORA COM EDITOR COMPLETO)
+        # ABA 3: CONFIGURAÇÕES (LAYOUT MELHORADO)
         # ==================================================
         with tab_config:
             st.markdown("### 🛠️ Gerenciar Cadastros")
             
-            c_conta, c_cat = st.columns(2)
+            # --- ÁREA DE CRIAÇÃO (Lado a Lado) ---
+            c_create_conta, c_create_cat = st.columns(2)
             
-            # --- FORMULÁRIO DE CRIAÇÃO ---
-            with c_conta:
-                st.markdown("#### 🏦 Nova Conta")
-                with st.form("add_conta"):
-                    nome_conta = st.text_input("Nome", placeholder="Nubank, Carteira...")
-                    if st.form_submit_button("Salvar Conta"):
-                        if nome_conta:
-                            try:
-                                srv_account.criar(user_id, nome_conta)
-                                st.toast("Conta criada!")
-                                time.sleep(0.5)
-                                st.rerun()
-                            except Exception as e: st.error(str(e))
-            
-            with c_cat:
-                st.markdown("#### 🏷️ Nova Categoria")
-                with st.form("add_cat"):
-                    nome_cat = st.text_input("Nome", placeholder="Salário, Mercado...")
-                    tipo_cat = st.radio("Tipo", ["gasto", "renda"], horizontal=True)
-                    
-                    if st.form_submit_button("Salvar Categoria"):
-                        if nome_cat:
-                            try:
-                                srv_cat.adicionar(user_id, nome_cat, tipo_cat)
-                                st.toast("Categoria criada!")
-                                time.sleep(0.5)
-                                st.rerun()
-                            except Exception as e: st.error(str(e))
+            with c_create_conta:
+                with st.container(border=True):
+                    st.markdown("#### 🏦 Nova Conta")
+                    with st.form("add_conta"):
+                        nome_conta = st.text_input("Nome", placeholder="Nubank, Carteira...")
+                        if st.form_submit_button("Salvar Conta"):
+                            if nome_conta:
+                                try:
+                                    srv_account.criar(user_id, nome_conta)
+                                    st.toast("Conta criada!", icon="🏦")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                except Exception as e: st.error(str(e))
 
-            st.divider()
+            with c_create_cat:
+                with st.container(border=True):
+                    st.markdown("#### 🏷️ Nova Categoria")
+                    with st.form("add_cat"):
+                        nome_cat = st.text_input("Nome", placeholder="Salário, Mercado...")
+                        tipo_cat = st.radio("Tipo", ["gasto", "renda"], horizontal=True)
+                        if st.form_submit_button("Salvar Categoria"):
+                            if nome_cat:
+                                try:
+                                    srv_cat.adicionar(user_id, nome_cat, tipo_cat)
+                                    st.toast("Categoria criada!", icon="🏷️")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                except Exception as e: st.error(str(e))
 
-            # --- LISTAGEM E EXCLUSÃO (IMPLEMENTADO AQUI) ---
-            st.markdown("#### 📋 Itens Cadastrados (Gerenciar)")
-            
+            st.markdown("---")
+            st.markdown("### 📋 Meus Itens")
+
+            # --- LISTAGEM ESTILO "CARDS" ---
+            # Separamos em 3 colunas visualmente distintas
             col_contas, col_gastos, col_rendas = st.columns(3)
-            
+
+            # 1. Coluna de Contas
             with col_contas:
-                st.caption("🏦 Contas")
+                st.caption("🏦 SUAS CONTAS")
                 if contas:
                     for c in contas:
-                        st.text(f"• {c.name}")
+                        with st.container(border=True):
+                            st.write(f"**{c.name}**")
+                            # Contas geralmente não se exclui fácil por causa do vínculo, 
+                            # mas se quiser ativar, basta copiar a lógica abaixo.
                 else:
-                    st.info("Nenhuma conta.")
+                    st.info("Nenhuma conta cadastrada.")
 
+            # 2. Coluna de Gastos (Cards com Botão de Excluir)
             with col_gastos:
-                st.caption("🔴 Gastos")
+                st.caption("🔴 SEUS GASTOS")
                 if cats_gasto:
                     for c in cats_gasto:
-                        # Layout em colunas para alinhar texto e botão
-                        c_txt, c_btn = st.columns([0.8, 0.2])
-                        c_txt.text(f"{c.name}")
-                        if c_btn.button("🗑️", key=f"del_g_{c.id}"):
-                            srv_cat.deletar(user_id, c.name)
-                            st.rerun()
+                        # Container cria o efeito de "Card"
+                        with st.container(border=True):
+                            c_txt, c_btn = st.columns([4, 1])
+                            with c_txt:
+                                st.write(f"**{c.name}**")
+                            with c_btn:
+                                # Key única é essencial
+                                if st.button("🗑️", key=f"del_g_{c.id}", help=f"Excluir {c.name}"):
+                                    if srv_cat.deletar(user_id, c.name):
+                                        st.toast(f"Categoria '{c.name}' removida!", icon="🗑️")
+                                        time.sleep(1) # Pausa dramática para feedback
+                                        st.rerun()
+                                    else:
+                                        st.error("Erro ao excluir.")
                 else:
-                    st.info("Nenhuma.")
+                    st.info("Nenhum gasto cadastrado.")
 
+            # 3. Coluna de Receitas
             with col_rendas:
-                st.caption("🟢 Receitas")
+                st.caption("🟢 SUAS RECEITAS")
                 if cats_renda:
                     for c in cats_renda:
-                        c_txt, c_btn = st.columns([0.8, 0.2])
-                        c_txt.text(f"{c.name}")
-                        if c_btn.button("🗑️", key=f"del_r_{c.id}"):
-                            srv_cat.deletar(user_id, c.name)
-                            st.rerun()
+                        with st.container(border=True):
+                            c_txt, c_btn = st.columns([4, 1])
+                            with c_txt:
+                                st.write(f"**{c.name}**")
+                            with c_btn:
+                                if st.button("🗑️", key=f"del_r_{c.id}", help=f"Excluir {c.name}"):
+                                    if srv_cat.deletar(user_id, c.name):
+                                        st.toast(f"Categoria '{c.name}' removida!", icon="🗑️")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("Erro ao excluir.")
                 else:
-                    st.info("Nenhuma.")
+                    st.info("Nenhuma receita cadastrada.")
 
 if __name__ == "__main__":
     main()
