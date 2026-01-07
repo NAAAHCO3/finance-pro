@@ -2,13 +2,13 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import time
-
 from src.database import get_db
 from src.services.transaction_service import TransactionService
 from src.services.account_service import AccountService
 from src.services.category_service import CategoryService
 
-st.set_page_config(page_title="Movimentações", page_icon="💸", layout="wide")
+# Configuração da página
+st.set_page_config(page_title="Movimentações", page_icon="📝", layout="wide")
 
 def main():
     if not st.session_state.get("logged_in"):
@@ -17,7 +17,7 @@ def main():
 
     user_id = st.session_state.user_id
 
-    st.title("💸 Movimentações")
+    st.title("📝 Movimentações")
     
     tab_lan, tab_extrato, tab_config = st.tabs([
         "➕ Novo Lançamento", 
@@ -46,9 +46,6 @@ def main():
                 st.markdown("#### Registrar Movimentação")
                 
                 # --- ZONA REATIVA (FORA DO FORMULÁRIO) ---
-                # Campos que precisam de atualização instantânea ficam aqui
-                
-                # Linha 1: Drivers Principais
                 c_tipo, c_valor, c_opts = st.columns([1, 1, 2])
                 
                 with c_tipo:
@@ -56,7 +53,6 @@ def main():
                     tipo_db = "gasto" if "Despesa" in tipo_ui else "renda"
                 
                 with c_valor:
-                    # VALOR AGORA É REATIVO
                     valor = st.number_input("Valor Total (R$)", min_value=0.01, step=0.01, format="%.2f")
 
                 with c_opts:
@@ -70,19 +66,18 @@ def main():
                     if tipo_db == "gasto":
                         is_parcelado = c_chk2.checkbox("Parcelar?", value=False)
 
-                # Linha 2: Parcelamento (Aparece instantaneamente)
+                # Parcelamento Reativo
                 parcelas = 1
                 if is_parcelado and tipo_db == "gasto":
                     c_parc1, c_parc2 = st.columns([1, 3])
                     with c_parc1:
                         parcelas = st.number_input("Nº Parcelas", min_value=2, max_value=60, value=2, step=1)
                     with c_parc2:
-                        st.write("") # Espaçamento
+                        st.write("") 
                         st.write("") 
                         if valor > 0:
-                            # CÁLCULO AO VIVO
                             valor_parc = valor / parcelas
-                            st.info(f"📉 **{parcelas}x** de **R$ {valor_parc:,.2f}**")
+                            st.info(f"💳 **{parcelas}x** de **R$ {valor_parc:,.2f}**")
 
                 # Definição de Listas
                 lista_cats = cats_gasto if tipo_db == "gasto" else cats_renda
@@ -90,10 +85,8 @@ def main():
 
                 st.divider()
 
-                # --- ZONA DE DETALHES (DENTRO DO FORMULÁRIO) ---
-                # Campos de preenchimento padrão ficam aqui para agrupar o envio
+                # --- FORMULÁRIO DE ENVIO ---
                 with st.form("form_transacao", clear_on_submit=True):
-                    
                     c1, c2, c3 = st.columns(3)
                     
                     with c1:
@@ -114,21 +107,17 @@ def main():
                     with c3:
                         conta = st.selectbox("Conta / Carteira", contas, format_func=lambda x: x.name)
 
-                    # Data de Pagamento (Condicional)
-                    dt_pagamento = dt_compra # Padrão
-                    
+                    # Data de Pagamento
+                    dt_pagamento = dt_compra 
                     if not pago_agora:
-                        st.write("")
                         dt_pagamento = st.date_input(
                             "Data do Vencimento / Pagamento Real", 
                             value=date.today(),
                             help="Data futura quando o dinheiro sairá da conta"
                         )
                     
-                    st.write("")
                     descricao = st.text_input("Descrição (Opcional)", placeholder="Ex: Mercado, Almoço...")
 
-                    # Botão de Envio
                     submitted = st.form_submit_button("✅ Salvar Lançamento", use_container_width=True, type="primary")
 
                     if submitted:
@@ -195,14 +184,14 @@ def main():
                 st.info("Nenhum lançamento encontrado.")
 
         # ==================================================
-        # ABA 3: CONFIGURAÇÕES
+        # ABA 3: CONFIGURAÇÕES (AGORA COM EDITOR COMPLETO)
         # ==================================================
         with tab_config:
             st.markdown("### 🛠️ Gerenciar Cadastros")
             
             c_conta, c_cat = st.columns(2)
             
-            # Form Nova Conta
+            # --- FORMULÁRIO DE CRIAÇÃO ---
             with c_conta:
                 st.markdown("#### 🏦 Nova Conta")
                 with st.form("add_conta"):
@@ -216,7 +205,6 @@ def main():
                                 st.rerun()
                             except Exception as e: st.error(str(e))
             
-            # Form Nova Categoria
             with c_cat:
                 st.markdown("#### 🏷️ Nova Categoria")
                 with st.form("add_cat"):
@@ -233,17 +221,44 @@ def main():
                             except Exception as e: st.error(str(e))
 
             st.divider()
-            st.markdown("#### 📋 Itens Cadastrados")
-            c1, c2, c3 = st.columns(3)
-            with c1:
+
+            # --- LISTAGEM E EXCLUSÃO (IMPLEMENTADO AQUI) ---
+            st.markdown("#### 📋 Itens Cadastrados (Gerenciar)")
+            
+            col_contas, col_gastos, col_rendas = st.columns(3)
+            
+            with col_contas:
                 st.caption("🏦 Contas")
-                for c in contas: st.write(f"• {c.name}")
-            with c2:
-                st.caption("🔻 Gastos")
-                for c in cats_gasto: st.write(f"• {c.name}")
-            with c3:
-                st.caption("💚 Receitas")
-                for c in cats_renda: st.write(f"• {c.name}")
+                if contas:
+                    for c in contas:
+                        st.text(f"• {c.name}")
+                else:
+                    st.info("Nenhuma conta.")
+
+            with col_gastos:
+                st.caption("🔴 Gastos")
+                if cats_gasto:
+                    for c in cats_gasto:
+                        # Layout em colunas para alinhar texto e botão
+                        c_txt, c_btn = st.columns([0.8, 0.2])
+                        c_txt.text(f"{c.name}")
+                        if c_btn.button("🗑️", key=f"del_g_{c.id}"):
+                            srv_cat.deletar(user_id, c.name)
+                            st.rerun()
+                else:
+                    st.info("Nenhuma.")
+
+            with col_rendas:
+                st.caption("🟢 Receitas")
+                if cats_renda:
+                    for c in cats_renda:
+                        c_txt, c_btn = st.columns([0.8, 0.2])
+                        c_txt.text(f"{c.name}")
+                        if c_btn.button("🗑️", key=f"del_r_{c.id}"):
+                            srv_cat.deletar(user_id, c.name)
+                            st.rerun()
+                else:
+                    st.info("Nenhuma.")
 
 if __name__ == "__main__":
     main()
