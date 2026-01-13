@@ -84,7 +84,7 @@ class MLService:
                 "media_diaria": float(media_por_dia_ativo),
                 "maior_gasto": float(maior_gasto_unico),
                 "dias_com_gasto": int(dias_com_gasto),
-                "pareto": pareto  # DataFrame com colunas: category, amount, percent, cumulative, class
+                "pareto": pareto 
             }
 
         except Exception as e:
