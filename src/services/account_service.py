@@ -60,7 +60,7 @@ class AccountService:
             conta_db = Account(
                 user_id=user_id,
                 name=nome_conta
-                # balance=valor_inicial # Descomente se seu model tiver balance e quiser usar
+                # balance=valor_inicial # Descomente se seu model tiver balance
             )
 
             self.db.add(conta_db)

@@ -152,6 +152,7 @@ class CategoryService:
 
         except IntegrityError:
             self.db.rollback()
+            # Esta mensagem protege contra a exclusão de dados importantes
             return False, "Não é possível excluir: existem lançamentos usando esta categoria."
         
         except Exception as e:

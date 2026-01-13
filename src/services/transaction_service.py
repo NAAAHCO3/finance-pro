@@ -2,9 +2,8 @@ import logging
 import pandas as pd
 from datetime import date
 from typing import Any, Optional
-from dateutil.relativedelta import relativedelta # Para somar meses corretamente
+from dateutil.relativedelta import relativedelta
 from sqlalchemy.orm import Session
-
 from src.models.transaction import Transaction
 from src.models.category import Category
 from src.models.account import Account
@@ -22,16 +21,15 @@ class TransactionService:
         user_id: int,
         tipo: str,
         valor_total: Any,
-        categoria_nome: str,  # ALTERADO: Recebe Nome (str) em vez de ID
-        conta_nome: str = "Carteira", # ALTERADO: Padrão "Carteira" se não informado
+        category_id: int,  # ALTERADO: Recebe ID direto
+        account_id: int,   # ALTERADO: Recebe ID direto
         descricao: str = "",
         data_compra: Optional[date] = None,
         data_pagamento: Optional[date] = None,
         parcelas: int = 1
     ) -> None:
         """
-        Registra transações, suportando parcelamento automático.
-        Resolve automaticamente Nomes -> IDs para evitar erros.
+        Registra transações usando IDs diretos (Performance e Segurança melhoradas).
         """
         tipo_normalizado = self._validar_tipo(tipo)
         valor_num = self._normalizar_valor(valor_total)
@@ -41,38 +39,11 @@ class TransactionService:
         dt_pagamento_inicial = data_pagamento if data_pagamento else dt_compra
 
         try:
-            # 1. RESOLVER CATEGORIA (Nome -> ID)
-            # Busca pelo nome. Se não existir, cria automaticamente.
-            cat = self.db.query(Category).filter(
-                Category.user_id == user_id, 
-                Category.name == categoria_nome
-            ).first()
-            
-            if not cat:
-                cat = Category(user_id=user_id, name=categoria_nome, type=tipo_normalizado)
-                self.db.add(cat)
-                self.db.commit()
-                self.db.refresh(cat)
-            
-            # 2. RESOLVER CONTA (Nome -> ID)
-            # Busca pelo nome. Se não existir, cria a conta padrão.
-            acc = self.db.query(Account).filter(
-                Account.user_id == user_id, 
-                Account.name == conta_nome
-            ).first()
-            
-            if not acc:
-                acc = Account(user_id=user_id, name=conta_nome, balance=0.0)
-                self.db.add(acc)
-                self.db.commit()
-                self.db.refresh(acc)
-
-            # 3. CRIAÇÃO DAS TRANSAÇÕES (Lógica Original Mantida)
+            # LÓGICA DE PARCELAMENTO
             if parcelas > 1:
                 valor_parcela = valor_num / parcelas
                 
                 for i in range(parcelas):
-                    # Calcula a data de pagamento desta parcela (mês a mês)
                     dt_vencimento = dt_pagamento_inicial + relativedelta(months=i)
                     tag_parcela = f"{i+1}/{parcelas}"
                     desc_final = f"{descricao} ({tag_parcela})" if descricao else f"Parcela {tag_parcela}"
@@ -81,8 +52,8 @@ class TransactionService:
                         user_id=user_id,
                         type=tipo_normalizado,
                         amount=valor_parcela,
-                        category_id=cat.id, # Usa o ID resolvido
-                        account_id=acc.id,  # Usa o ID resolvido
+                        category_id=category_id, # ID direto
+                        account_id=account_id,   # ID direto
                         description=desc_final,
                         date=dt_compra,           
                         payment_date=dt_vencimento,
@@ -90,13 +61,13 @@ class TransactionService:
                     )
                     self.db.add(nova)
             else:
-                # Transação única (à vista)
+                # Transação única
                 nova = Transaction(
                     user_id=user_id,
                     type=tipo_normalizado,
                     amount=valor_num,
-                    category_id=cat.id, # Usa o ID resolvido
-                    account_id=acc.id,  # Usa o ID resolvido
+                    category_id=category_id, # ID direto
+                    account_id=account_id,   # ID direto
                     description=descricao,
                     date=dt_compra,
                     payment_date=dt_pagamento_inicial,
@@ -117,8 +88,8 @@ class TransactionService:
             query = (
                 self.db.query(
                     Transaction.id,
-                    Transaction.date,         # Compra
-                    Transaction.payment_date, # Pagamento
+                    Transaction.date,
+                    Transaction.payment_date,
                     Transaction.type,
                     Transaction.amount,
                     Transaction.description,
@@ -129,7 +100,7 @@ class TransactionService:
                 .join(Category, Transaction.category_id == Category.id)
                 .join(Account, Transaction.account_id == Account.id)
                 .filter(Transaction.user_id == user_id)
-                .order_by(Transaction.payment_date.desc()) # Ordena por vencimento
+                .order_by(Transaction.payment_date.desc())
             )
 
             df = pd.read_sql(query.statement, self.db.bind)
