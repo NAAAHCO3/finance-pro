@@ -29,12 +29,9 @@ st.set_page_config(
 def inject_custom_css():
     st.markdown("""
     <style>
-        /* Fundo Geral e Sidebar já são escuros pelo tema do Streamlit, 
-           mas vamos reforçar os Cards */
-        
         /* Estilo dos Cards de Métricas (KPIs) */
         div[data-testid="stMetric"] {
-            background-color: #1E1E2E; /* Cor de fundo do card */
+            background-color: #1E1E2E;
             border: 1px solid #333;
             padding: 15px;
             border-radius: 10px;
@@ -43,10 +40,9 @@ def inject_custom_css():
         }
         div[data-testid="stMetric"]:hover {
             transform: scale(1.02);
-            border-color: #6C5CE7; /* Borda roxa neon ao passar o mouse */
+            border-color: #6C5CE7; /* Borda roxa neon */
         }
         
-        /* Cores dos Textos das Métricas */
         div[data-testid="stMetricLabel"] {
             color: #A6A6A6 !important;
             font-size: 0.9rem;
@@ -54,13 +50,6 @@ def inject_custom_css():
         div[data-testid="stMetricValue"] {
             color: #FFFFFF !important;
             font-weight: bold;
-        }
-        
-        /* Ajuste de tabelas */
-        div[data-testid="stDataFrame"] {
-            background-color: #1E1E2E;
-            border-radius: 10px;
-            padding: 10px;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -106,12 +95,10 @@ def login_screen():
                         st.warning("⚠️ Preencha todos os campos.")
 
 # ======================================================
-# DASHBOARD DE ANÁLISE (MODERNO)
+# DASHBOARD DE ANÁLISE
 # ======================================================
 def dashboard_screen():
-    # Injeta o CSS Neon
     inject_custom_css()
-    
     user_id = st.session_state.user_id
 
     # Sidebar
@@ -119,14 +106,13 @@ def dashboard_screen():
         st.markdown(f"### 👤 {st.session_state.username}")
         st.caption("Menu Principal")
         st.markdown("---")
-        st.info("💡 Acesse **Movimentações** no menu lateral para editar ou adicionar lançamentos.")
+        st.info("💡 Acesse **Movimentações** no menu lateral para editar, excluir ou adicionar lançamentos.")
         if st.button("🚪 Sair", use_container_width=True):
             st.session_state.clear()
             st.rerun()
 
     st.title(f"Dashboard Financeiro")
-    st.caption(f"Visão geral das finanças de {st.session_state.username}")
-
+    
     with get_db() as db:
         srv_trans = TransactionService(db)
         srv_stats = MLService(db)
@@ -155,15 +141,14 @@ def dashboard_screen():
                 if not meses_disp: meses_disp = [date.today().month]
                 mes_sel = st.selectbox("Mês", meses_disp, format_func=lambda x: mes_map.get(x, str(x)), key="month_sel")
 
-        # Filtra DataFrame pelo Mês Selecionado
+        # Filtra DataFrames
         df_filtrado = df[(df["payment_date"].dt.year == ano_sel) & (df["payment_date"].dt.month == mes_sel)]
-        # Filtra DataFrame pelo Ano Inteiro (para gráfico de evolução)
         df_ano = df[df["payment_date"].dt.year == ano_sel]
 
-        # --- ESTATÍSTICAS (Usando MLService atualizado) ---
+        # --- ESTATÍSTICAS ---
         stats = srv_stats.analisar_padrao_gastos(df_filtrado)
 
-        # 3. KPIs SUPERIORES
+        # 3. KPIs
         receita = df_filtrado[df_filtrado["type"] == "renda"]["amount"].sum()
         gasto = df_filtrado[df_filtrado["type"] == "gasto"]["amount"].sum()
         saldo = receita - gasto
@@ -177,37 +162,53 @@ def dashboard_screen():
 
         st.markdown("---")
 
-        # 4. GRÁFICOS VISUAIS (LAYOUT 2 COLUNAS)
+        # 4. GRÁFICOS
         col_main, col_side = st.columns([2, 1])
 
         with col_main:
-            st.subheader(f"Evolução em {ano_sel}")
+            # ---------------------------------------------------------
+            # GRÁFICO DE LINHA: EVOLUÇÃO RECEITAS vs DESPESAS
+            # ---------------------------------------------------------
+            st.subheader(f"Evolução Anual ({ano_sel})")
             
-            # Prepara dados para o gráfico de barras anual
-            df_gasto_ano = df_ano[df_ano["type"] == "gasto"].copy()
-            if not df_gasto_ano.empty:
-                df_gasto_ano["mes_num"] = df_gasto_ano["payment_date"].dt.month
-                df_gasto_ano["mes_nome"] = df_gasto_ano["payment_date"].dt.strftime("%b")
+            if not df_ano.empty:
+                # Prepara os dados: Agrupa por Mês e Tipo
+                df_evo = df_ano.copy()
+                df_evo["mes_num"] = df_evo["payment_date"].dt.month
+                df_evo["mes_nome"] = df_evo["payment_date"].dt.strftime("%b")
                 
-                df_bar = df_gasto_ano.groupby(["mes_num", "mes_nome"])["amount"].sum().reset_index().sort_values("mes_num")
+                df_grouped = df_evo.groupby(["mes_num", "mes_nome", "type"])["amount"].sum().reset_index().sort_values("mes_num")
                 
-                # Gráfico Neon de Barras
-                fig_bar = px.bar(
-                    df_bar, x="mes_nome", y="amount",
-                    color="amount",
-                    color_continuous_scale=["#4facfe", "#00f2fe"], # Gradiente Azul Neon
-                    template="plotly_dark"
+                # Mapa de Cores: Verde para Renda, Vermelho para Gasto
+                color_map = {"renda": "#00E676", "gasto": "#FF5252"}
+                
+                fig_line = px.line(
+                    df_grouped, 
+                    x="mes_nome", 
+                    y="amount", 
+                    color="type",
+                    markers=True,
+                    color_discrete_map=color_map,
+                    template="plotly_dark",
+                    labels={"amount": "Valor (R$)", "mes_nome": "Mês", "type": "Tipo"}
                 )
-                fig_bar.update_layout(
-                    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                    xaxis_title="", yaxis_title="", showlegend=False,
-                    margin=dict(t=10, b=10, l=10, r=10),
+                
+                fig_line.update_layout(
+                    plot_bgcolor="rgba(0,0,0,0)", 
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    xaxis_title="", 
+                    yaxis_title="",
+                    legend=dict(
+                        orientation="h", 
+                        y=1.1, 
+                        title=None
+                    ),
+                    hovermode="x unified",
                     height=350
                 )
-                fig_bar.update_traces(marker_line_width=0, opacity=0.9, texttemplate="R$ %{y:.2s}")
-                st.plotly_chart(fig_bar, use_container_width=True)
+                st.plotly_chart(fig_line, use_container_width=True)
             else:
-                st.info("Sem dados anuais.")
+                st.info("Sem dados anuais para gerar o gráfico.")
 
             # Detalhamento por Categoria (Barras Horizontais)
             st.subheader("Onde você gastou este mês?")
@@ -218,7 +219,7 @@ def dashboard_screen():
                 fig_h = px.bar(
                     df_cat, x="amount", y="category", orientation='h',
                     color="amount", 
-                    color_continuous_scale="Viridis", # Gradiente Moderno
+                    color_continuous_scale="Viridis",
                     template="plotly_dark"
                 )
                 fig_h.update_layout(
@@ -241,20 +242,19 @@ def dashboard_screen():
                 fig_donut = go.Figure(data=[go.Pie(
                     labels=df_cat_donut['category'], 
                     values=df_cat_donut['amount'], 
-                    hole=.7, # Buraco no meio para virar Rosca
+                    hole=.6, 
                     marker=dict(colors=px.colors.qualitative.Pastel)
                 )])
                 
                 fig_donut.update_layout(
                     template="plotly_dark",
                     showlegend=True,
-                    legend=dict(orientation="h", y=-0.2),
-                    margin=dict(t=20, b=0, l=20, r=20),
-                    height=350,
+                    legend=dict(orientation="h", y=-0.1),
+                    margin=dict(t=0, b=0, l=0, r=0),
+                    height=300,
                     paper_bgcolor="rgba(0,0,0,0)",
                     plot_bgcolor="rgba(0,0,0,0)",
-                    # Texto no centro da rosca
-                    annotations=[dict(text=f'Gastos', x=0.5, y=0.5, font_size=16, showarrow=False)]
+                    annotations=[dict(text='Despesas', x=0.5, y=0.5, font_size=14, showarrow=False)]
                 )
                 st.plotly_chart(fig_donut, use_container_width=True)
             else:
@@ -266,8 +266,7 @@ def dashboard_screen():
             
             if not recents.empty:
                 for _, r in recents.iterrows():
-                    # Formata visualmente
-                    cor_valor = "#FF5252" if r["type"] == "gasto" else "#69F0AE"
+                    cor_valor = "#FF5252" if r["type"] == "gasto" else "#00E676"
                     sinal = "-" if r["type"] == "gasto" else "+"
                     
                     st.markdown(

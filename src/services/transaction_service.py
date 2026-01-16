@@ -21,8 +21,8 @@ class TransactionService:
         user_id: int,
         tipo: str,
         valor_total: Any,
-        category_id: int,  # ID direto
-        account_id: int,   # ID direto
+        category_id: int,
+        account_id: int,
         descricao: str = "",
         data_compra: Optional[date] = None,
         data_pagamento: Optional[date] = None,
@@ -90,7 +90,7 @@ class TransactionService:
         novo_acc_id: int
     ) -> bool:
         """
-        Permite editar um lançamento existente (Usado no lancamentos.py).
+        Permite editar um lançamento existente.
         """
         try:
             t = self.db.query(Transaction).filter(
@@ -154,6 +154,16 @@ class TransactionService:
             ).first()
             if not transacao: return False
             self.db.delete(transacao)
+            self.db.commit()
+            return True
+        except Exception:
+            self.db.rollback()
+            return False
+
+    def limpar_todos(self, user_id: int) -> bool:
+        """Apaga TODOS os lançamentos do usuário (Zona de Perigo)."""
+        try:
+            self.db.query(Transaction).filter(Transaction.user_id == user_id).delete()
             self.db.commit()
             return True
         except Exception:
