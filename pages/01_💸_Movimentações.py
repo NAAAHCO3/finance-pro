@@ -2,52 +2,36 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import time
-
 from src.database import get_db
 from src.services.transaction_service import TransactionService
 from src.services.account_service import AccountService
 from src.services.category_service import CategoryService
 
-# ======================================================
-# CONFIG
-# ======================================================
-st.set_page_config(
-    page_title="Gestão Financeira",
-    page_icon="📝",
-    layout="wide"
-)
+st.set_page_config(page_title="Gestão Financeira", page_icon="📝", layout="wide")
 
-# ======================================================
-# HELPERS
-# ======================================================
-def require_login():
+def main():
     if not st.session_state.get("logged_in"):
         st.warning("🔒 Acesso restrito. Faça login.")
         st.stop()
 
-def brl(v):
-    return f"R$ {v:,.2f}"
-
-def safe_index(lista, attr, valor):
-    """Retorna índice seguro para selectbox"""
-    try:
-        return next(i for i, x in enumerate(lista) if getattr(x, attr) == valor)
-    except StopIteration:
-        return 0
-
-# ======================================================
-# APP
-# ======================================================
-def main():
-    require_login()
     user_id = st.session_state.user_id
-
     st.title("📝 Controle Financeiro")
+    
+    # CSS Customizado para esta página também
+    st.markdown("""
+    <style>
+        div[data-testid="stExpander"] {
+            background-color: #1E1E2E;
+            border-radius: 10px;
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
-    tab_desp, tab_rec, tab_ext, tab_cfg = st.tabs([
-        "🔴 Nova Despesa",
-        "🟢 Nova Receita",
-        "📄 Extrato",
+    # Abas
+    tab_despesa, tab_receita, tab_extrato, tab_cadastros = st.tabs([
+        "🔴 Nova Despesa", 
+        "🟢 Nova Receita", 
+        "📄 Extrato e Edição", 
         "⚙️ Cadastros"
     ])
 
@@ -57,171 +41,194 @@ def main():
         srv_cat = CategoryService(db)
 
         contas = srv_acc.listar(user_id)
-        categorias = srv_cat.listar_todos(user_id)
-
-        cats_gasto = [c for c in categorias if c.type == "gasto"]
-        cats_renda = [c for c in categorias if c.type == "renda"]
+        cats_all = srv_cat.listar_todos(user_id)
+        
+        cats_renda = [c for c in cats_all if c.type == 'renda']
+        cats_gasto = [c for c in cats_all if c.type == 'gasto']
 
         if not contas:
-            st.error("⚠️ Cadastre pelo menos uma conta.")
-            return
+            st.error("⚠️ Cadastre pelo menos uma CONTA na aba 'Cadastros'.")
+            st.stop()
 
         # ==================================================
-        # 🔴 DESPESA
+        # 1. NOVA DESPESA (REATIVO: SEM st.form)
         # ==================================================
-        with tab_desp:
-            st.subheader("💸 Registrar Despesa")
-
+        with tab_despesa:
             if not cats_gasto:
-                st.warning("Cadastre categorias de GASTO.")
+                st.warning("⚠️ Cadastre categorias de GASTO.")
             else:
-                cflag1, cflag2 = st.columns(2)
-                pago = cflag1.checkbox("Pago hoje?", value=True, key="gasto_pago")
-                parcelado = cflag2.checkbox("Compra parcelada?", key="gasto_parcelado")
-
-                with st.form("form_despesa", clear_on_submit=True):
+                with st.container(border=True):
+                    st.subheader("💸 Registrar Saída")
+                    
+                    # Layout Reativo
                     c1, c2 = st.columns([1, 2])
-                    valor = c1.number_input("Valor (R$)", min_value=0.01, step=10.0, format="%.2f")
-                    desc = c2.text_input("Descrição")
+                    valor = c1.number_input("Valor (R$)", min_value=0.01, step=10.0, format="%.2f", key="v_gasto")
+                    desc = c2.text_input("Descrição", placeholder="Ex: Supermercado...", key="d_gasto")
 
                     c3, c4, c5 = st.columns(3)
-                    data_compra = c3.date_input("Data da Compra", value=date.today())
-                    cat = c4.selectbox("Categoria", cats_gasto, format_func=lambda x: x.name)
-                    acc = c5.selectbox("Conta", contas, format_func=lambda x: x.name)
+                    dt_compra = c3.date_input("Data Compra", value=date.today(), key="dt_gasto")
+                    cat_sel = c4.selectbox("Categoria", cats_gasto, format_func=lambda x: x.name, key="cat_gasto")
+                    acc_sel = c5.selectbox("Conta", contas, format_func=lambda x: x.name, key="acc_gasto")
+                    
+                    st.divider()
 
-                    data_pagamento = data_compra
+                    # Opções Reativas (Sem Form)
+                    col_opts1, col_opts2 = st.columns(2)
+                    pago_agora = col_opts1.checkbox("Pago Hoje?", value=True, key="chk_pago")
+                    parcelado = col_opts2.checkbox("Parcelar?", value=False, key="chk_parc")
+
+                    dt_pagamento = dt_compra
                     parcelas = 1
 
-                    if not pago:
-                        data_pagamento = st.date_input("Data de Vencimento", value=data_compra)
-
+                    # Campos Condicionais (Aparecem instantaneamente)
+                    if not pago_agora:
+                        dt_pagamento = col_opts1.date_input("Vencimento", value=date.today(), key="dt_venc")
+                    
                     if parcelado:
-                        parcelas = st.number_input("Número de Parcelas", 2, 60, 2)
-                        st.caption(f"💳 {parcelas}x de {brl(valor / parcelas)}")
+                        parcelas = col_opts2.number_input("Nº Parcelas", 2, 60, 2, key="n_parc")
+                        if valor > 0:
+                            col_opts2.info(f"💳 {parcelas}x de R$ {valor/parcelas:,.2f}")
 
-                    if st.form_submit_button("🔴 Salvar Despesa", type="primary", use_container_width=True):
-                        srv_trans.registrar(
-                            user_id=user_id,
-                            tipo="gasto",
-                            valor_total=valor,
-                            category_id=cat.id,
-                            account_id=acc.id,
-                            descricao=desc,
-                            data_compra=data_compra,
-                            data_pagamento=data_pagamento,
-                            parcelas=int(parcelas)
-                        )
-                        st.toast("Despesa registrada!", icon="💸")
-                        time.sleep(0.3)
-                        st.rerun()
+                    st.write("")
+                    # Botão Enviar
+                    if st.button("🔴 Confirmar Despesa", type="primary", use_container_width=True):
+                        if not desc:
+                            st.error("Descrição obrigatória.")
+                        else:
+                            try:
+                                srv_trans.registrar(
+                                    user_id, "gasto", valor, cat_sel.id, acc_sel.id, 
+                                    desc, dt_compra, dt_pagamento, int(parcelas)
+                                )
+                                st.toast("Despesa Salva!", icon="💸")
+                                time.sleep(0.5)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro: {e}")
 
         # ==================================================
-        # 🟢 RECEITA
+        # 2. NOVA RECEITA
         # ==================================================
-        with tab_rec:
-            st.subheader("💰 Registrar Receita")
-
+        with tab_receita:
             if not cats_renda:
-                st.warning("Cadastre categorias de RECEITA.")
+                st.warning("⚠️ Cadastre categorias de RECEITA.")
             else:
-                with st.form("form_receita", clear_on_submit=True):
+                with st.container(border=True):
+                    st.subheader("💰 Registrar Entrada")
+                    
                     c1, c2 = st.columns([1, 2])
-                    valor = c1.number_input("Valor (R$)", min_value=0.01, step=100.0, format="%.2f")
-                    desc = c2.text_input("Descrição")
+                    valor_r = c1.number_input("Valor (R$)", min_value=0.01, step=100.0, format="%.2f", key="v_renda")
+                    desc_r = c2.text_input("Descrição", placeholder="Ex: Salário...", key="d_renda")
 
                     c3, c4, c5 = st.columns(3)
-                    data = c3.date_input("Data do Recebimento", value=date.today())
-                    cat = c4.selectbox("Categoria", cats_renda, format_func=lambda x: x.name)
-                    acc = c5.selectbox("Conta", contas, format_func=lambda x: x.name)
+                    dt_rec = c3.date_input("Data Recebimento", value=date.today(), key="dt_renda")
+                    cat_r = c4.selectbox("Categoria", cats_renda, format_func=lambda x: x.name, key="cat_renda")
+                    acc_r = c5.selectbox("Conta", contas, format_func=lambda x: x.name, key="acc_renda")
 
-                    if st.form_submit_button("🟢 Salvar Receita", type="primary", use_container_width=True):
-                        srv_trans.registrar(
-                            user_id=user_id,
-                            tipo="renda",
-                            valor_total=valor,
-                            category_id=cat.id,
-                            account_id=acc.id,
-                            descricao=desc,
-                            data_compra=data,
-                            data_pagamento=data,
-                            parcelas=1
-                        )
-                        st.toast("Receita registrada!", icon="💰")
-                        time.sleep(0.3)
-                        st.rerun()
+                    st.write("")
+                    if st.button("🟢 Confirmar Receita", type="primary", use_container_width=True):
+                        if not desc_r:
+                            st.error("Descrição obrigatória.")
+                        else:
+                            srv_trans.registrar(
+                                user_id, "renda", valor_r, cat_r.id, acc_r.id, 
+                                desc_r, dt_rec, dt_rec, 1
+                            )
+                            st.toast("Receita Salva!", icon="💰")
+                            time.sleep(0.5)
+                            st.rerun()
 
         # ==================================================
-        # 📄 EXTRATO (BUG CORRIGIDO)
+        # 3. EXTRATO E EDIÇÃO
         # ==================================================
-        with tab_ext:
+        with tab_extrato:
             df = srv_trans.df_usuario(user_id)
-
             if df.empty:
-                st.info("Nenhum lançamento.")
+                st.info("Sem lançamentos.")
             else:
-                escolha = st.selectbox(
-                    "Selecione um lançamento",
-                    df.to_dict("records"),
-                    format_func=lambda x: f"{'🔴' if x['type']=='gasto' else '🟢'} {x['description']} | {brl(x['amount'])}"
-                )
+                st.subheader("📋 Histórico e Edição")
+                c_sel, c_edit = st.columns([1, 2])
 
-                with st.form("editar"):
-                    c1, c2 = st.columns(2)
-                    desc = c1.text_input("Descrição", escolha["description"])
-                    val = c2.number_input("Valor", min_value=0.01, value=float(escolha["amount"]))
+                with c_sel:
+                    # Selectbox formatado
+                    opcoes = df.apply(lambda x: f"{'🔴' if x['type']=='gasto' else '🟢'} {x['description']} | R$ {x['amount']:.2f}", axis=1).tolist()
+                    escolha = st.selectbox("Selecione para editar:", opcoes)
+                    
+                    # Recupera ID
+                    try:
+                        # Gambiarra segura: acha a linha que corresponde a descrição e valor (pode falhar com duplicatas exatas, melhor seria ID visivel)
+                        idx_sel = opcoes.index(escolha)
+                        linha_atual = df.iloc[idx_sel]
+                        id_escolhido = int(linha_atual["id"])
+                    except: st.stop()
 
-                    c3, c4, c5 = st.columns(3)
-                    data = c3.date_input("Data", pd.to_datetime(escolha["payment_date"]).date())
+                with c_edit:
+                    with st.container(border=True):
+                        st.write(f"**Editando ID: {id_escolhido}**")
+                        with st.form("edit_form"):
+                            ce1, ce2 = st.columns(2)
+                            n_desc = ce1.text_input("Descrição", linha_atual["description"])
+                            n_val = ce2.number_input("Valor", float(linha_atual["amount"]), min_value=0.01)
+                            
+                            ce3, ce4, ce5 = st.columns(3)
+                            n_dt = ce3.date_input("Data", pd.to_datetime(linha_atual["payment_date"]).date())
+                            
+                            # Índices seguros
+                            try: ix_c = next(i for i,c in enumerate(cats_all) if c.id == linha_atual["category_id"])
+                            except: ix_c = 0
+                            try: ix_a = next(i for i,a in enumerate(contas) if a.id == linha_atual["account_id"])
+                            except: ix_a = 0
 
-                    idx_cat = safe_index(categorias, "id", escolha["category_id"])
-                    idx_acc = safe_index(contas, "id", escolha["account_id"])
+                            n_cat = ce4.selectbox("Categoria", cats_all, format_func=lambda x:x.name, index=ix_c)
+                            n_acc = ce5.selectbox("Conta", contas, format_func=lambda x:x.name, index=ix_a)
 
-                    cat = c4.selectbox("Categoria", categorias, index=idx_cat, format_func=lambda x: x.name)
-                    acc = c5.selectbox("Conta", contas, index=idx_acc, format_func=lambda x: x.name)
+                            save = st.form_submit_button("💾 Salvar", type="primary", use_container_width=True)
+                            if save:
+                                srv_trans.atualizar(user_id, id_escolhido, n_val, n_desc, n_dt, n_cat.id, n_acc.id)
+                                st.toast("Atualizado!")
+                                st.rerun()
 
-                    b1, b2 = st.columns(2)
+                        if st.button("🗑️ Excluir Item", key="bt_del_item", use_container_width=True):
+                            srv_trans.deletar(user_id, id_escolhido)
+                            st.success("Excluído.")
+                            time.sleep(0.5)
+                            st.rerun()
 
-                    if b1.form_submit_button("Salvar", type="primary", use_container_width=True):
-                        srv_trans.atualizar(
-                            user_id,
-                            escolha["id"],
-                            val,
-                            desc,
-                            data,
-                            cat.id,
-                            acc.id
-                        )
-                        st.toast("Atualizado!", icon="🔄")
-                        st.rerun()
-
-                    if b2.form_submit_button("Excluir", use_container_width=True):
-                        srv_trans.deletar(user_id, escolha["id"])
-                        st.toast("Excluído!", icon="🗑️")
-                        st.rerun()
-
-                st.divider()
-                st.dataframe(df, use_container_width=True)
+                st.dataframe(df[["payment_date", "description", "category", "amount", "account_name", "type"]], use_container_width=True, hide_index=True)
 
         # ==================================================
-        # ⚙️ CADASTROS
+        # 4. CADASTROS
         # ==================================================
-        with tab_cfg:
+        with tab_cadastros:
+            st.subheader("🛠️ Cadastros Básicos")
             c1, c2 = st.columns(2)
-
             with c1:
-                with st.form("nova_conta"):
-                    nome = st.text_input("Nova Conta")
-                    if st.form_submit_button("Criar"):
-                        srv_acc.criar(user_id, nome)
-                        st.rerun()
-
+                with st.container(border=True):
+                    st.write("**Nova Conta**")
+                    nome_acc = st.text_input("Nome da Conta", key="n_acc_new")
+                    if st.button("Criar Conta"):
+                        if nome_acc: 
+                            srv_acc.criar(user_id, nome_acc)
+                            st.rerun()
             with c2:
-                with st.form("nova_categoria"):
-                    nome = st.text_input("Nova Categoria")
-                    tipo = st.radio("Tipo", ["gasto", "renda"], horizontal=True)
-                    if st.form_submit_button("Criar"):
-                        srv_cat.adicionar(user_id, nome, tipo)
-                        st.rerun()
+                with st.container(border=True):
+                    st.write("**Nova Categoria**")
+                    nome_cat = st.text_input("Nome da Categoria", key="n_cat_new")
+                    tipo_cat = st.radio("Tipo", ["gasto", "renda"], horizontal=True, key="t_cat_new")
+                    if st.button("Criar Categoria"):
+                        if nome_cat:
+                            srv_cat.adicionar(user_id, nome_cat, tipo_cat)
+                            st.rerun()
+            
+            st.markdown("---")
+            with st.expander("🚨 ZONA DE PERIGO (Limpar Tudo)"):
+                st.warning("Isso apaga TODOS os lançamentos. Não afeta cadastros.")
+                confirma = st.checkbox("Tenho certeza.")
+                if st.button("💣 LIMPAR DADOS", type="primary", disabled=not confirma):
+                    srv_trans.limpar_todos(user_id)
+                    st.success("Dados limpos.")
+                    time.sleep(1)
+                    st.rerun()
 
 if __name__ == "__main__":
     main()
