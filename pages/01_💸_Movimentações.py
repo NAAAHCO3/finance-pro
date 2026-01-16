@@ -17,7 +17,7 @@ def main():
     user_id = st.session_state.user_id
     st.title("📝 Controle Financeiro")
     
-    # CSS Customizado para esta página também
+    # CSS Customizado para esta página
     st.markdown("""
     <style>
         div[data-testid="stExpander"] {
@@ -156,7 +156,6 @@ def main():
                     
                     # Recupera ID
                     try:
-                        # Gambiarra segura: acha a linha que corresponde a descrição e valor (pode falhar com duplicatas exatas, melhor seria ID visivel)
                         idx_sel = opcoes.index(escolha)
                         linha_atual = df.iloc[idx_sel]
                         id_escolhido = int(linha_atual["id"])
@@ -168,7 +167,8 @@ def main():
                         with st.form("edit_form"):
                             ce1, ce2 = st.columns(2)
                             n_desc = ce1.text_input("Descrição", linha_atual["description"])
-                            n_val = ce2.number_input("Valor", float(linha_atual["amount"]), min_value=0.01)
+                            # CORREÇÃO AQUI: Especificando value=... explicitamente
+                            n_val = ce2.number_input("Valor", value=float(linha_atual["amount"]), min_value=0.01)
                             
                             ce3, ce4, ce5 = st.columns(3)
                             n_dt = ce3.date_input("Data", pd.to_datetime(linha_atual["payment_date"]).date())
