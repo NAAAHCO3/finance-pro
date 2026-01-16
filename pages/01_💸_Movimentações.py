@@ -2,33 +2,51 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import time
+
 from src.database import get_db
 from src.services.transaction_service import TransactionService
 from src.services.account_service import AccountService
 from src.services.category_service import CategoryService
 
-st.set_page_config(page_title="Gestão Financeira", page_icon="📝", layout="wide")
+# ======================================================
+# CONFIGURAÇÃO
+# ======================================================
+st.set_page_config(page_title="Gestão Financeira", page_icon="💸", layout="wide")
 
+# CSS para melhorar aparência dos containers
+st.markdown("""
+<style>
+    div[data-testid="stExpander"] {
+        background-color: #1E1E2E;
+        border-radius: 10px;
+    }
+    div.stButton > button {
+        width: 100%;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ======================================================
+# FUNÇÕES ÚTEIS
+# ======================================================
+def limpar_campos(keys_to_clear):
+    """Limpa os campos do formulário resetando o session_state"""
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
+
+# ======================================================
+# APP
+# ======================================================
 def main():
     if not st.session_state.get("logged_in"):
         st.warning("🔒 Acesso restrito. Faça login.")
         st.stop()
 
     user_id = st.session_state.user_id
-    st.title("📝 Controle Financeiro")
-    
-    # CSS Customizado para esta página
-    st.markdown("""
-    <style>
-        div[data-testid="stExpander"] {
-            background-color: #1E1E2E;
-            border-radius: 10px;
-        }
-    </style>
-    """, unsafe_allow_html=True)
+    st.title("📝 Controle de Movimentações")
 
-    # Abas
-    tab_despesa, tab_receita, tab_extrato, tab_cadastros = st.tabs([
+    tab_desp, tab_rec, tab_ext, tab_cad = st.tabs([
         "🔴 Nova Despesa", 
         "🟢 Nova Receita", 
         "📄 Extrato e Edição", 
@@ -40,6 +58,7 @@ def main():
         srv_acc = AccountService(db)
         srv_cat = CategoryService(db)
 
+        # Carrega listas
         contas = srv_acc.listar(user_id)
         cats_all = srv_cat.listar_todos(user_id)
         
@@ -51,184 +70,227 @@ def main():
             st.stop()
 
         # ==================================================
-        # 1. NOVA DESPESA (REATIVO: SEM st.form)
+        # 1. NOVA DESPESA (SEM FORMULÁRIO - REATIVO)
         # ==================================================
-        with tab_despesa:
+        with tab_desp:
             if not cats_gasto:
                 st.warning("⚠️ Cadastre categorias de GASTO.")
             else:
+                st.subheader("Registrar Saída")
                 with st.container(border=True):
-                    st.subheader("💸 Registrar Saída")
-                    
-                    # Layout Reativo
+                    # Campos com KEYS para manter o estado e não resetar
                     c1, c2 = st.columns([1, 2])
-                    valor = c1.number_input("Valor (R$)", min_value=0.01, step=10.0, format="%.2f", key="v_gasto")
-                    desc = c2.text_input("Descrição", placeholder="Ex: Supermercado...", key="d_gasto")
+                    val_g = c1.number_input("Valor (R$)", min_value=0.01, step=10.0, format="%.2f", key="new_desp_val")
+                    desc_g = c2.text_input("Descrição", placeholder="Ex: Mercado", key="new_desp_desc")
 
                     c3, c4, c5 = st.columns(3)
-                    dt_compra = c3.date_input("Data Compra", value=date.today(), key="dt_gasto")
-                    cat_sel = c4.selectbox("Categoria", cats_gasto, format_func=lambda x: x.name, key="cat_gasto")
-                    acc_sel = c5.selectbox("Conta", contas, format_func=lambda x: x.name, key="acc_gasto")
-                    
+                    dt_compra = c3.date_input("Data Compra", value=date.today(), key="new_desp_dt")
+                    cat_g = c4.selectbox("Categoria", cats_gasto, format_func=lambda x: x.name, key="new_desp_cat")
+                    acc_g = c5.selectbox("Conta", contas, format_func=lambda x: x.name, key="new_desp_acc")
+
                     st.divider()
 
-                    # Opções Reativas (Sem Form)
-                    col_opts1, col_opts2 = st.columns(2)
-                    pago_agora = col_opts1.checkbox("Pago Hoje?", value=True, key="chk_pago")
-                    parcelado = col_opts2.checkbox("Parcelar?", value=False, key="chk_parc")
+                    # Opções reativas
+                    co1, co2 = st.columns(2)
+                    pago_agora = co1.checkbox("Pago Hoje?", value=True, key="new_desp_pago")
+                    parcelado = co2.checkbox("Parcelar?", value=False, key="new_desp_parc")
 
-                    dt_pagamento = dt_compra
-                    parcelas = 1
+                    # Lógica condicional imediata
+                    dt_venc = dt_compra
+                    qtd_parc = 1
 
-                    # Campos Condicionais (Aparecem instantaneamente)
                     if not pago_agora:
-                        dt_pagamento = col_opts1.date_input("Vencimento", value=date.today(), key="dt_venc")
+                        dt_venc = co1.date_input("Vencimento", value=dt_compra, key="new_desp_venc")
                     
                     if parcelado:
-                        parcelas = col_opts2.number_input("Nº Parcelas", 2, 60, 2, key="n_parc")
-                        if valor > 0:
-                            col_opts2.info(f"💳 {parcelas}x de R$ {valor/parcelas:,.2f}")
+                        qtd_parc = co2.number_input("Nº Parcelas", 2, 60, 2, key="new_desp_qtd")
+                        if val_g > 0:
+                            co2.info(f"💳 {qtd_parc}x de R$ {val_g/qtd_parc:,.2f}")
 
                     st.write("")
-                    # Botão Enviar
-                    if st.button("🔴 Confirmar Despesa", type="primary", use_container_width=True):
-                        if not desc:
+                    
+                    # Botão normal (não é form_submit_button)
+                    if st.button("🔴 Salvar Despesa", type="primary"):
+                        if not desc_g:
                             st.error("Descrição obrigatória.")
                         else:
                             try:
                                 srv_trans.registrar(
-                                    user_id, "gasto", valor, cat_sel.id, acc_sel.id, 
-                                    desc, dt_compra, dt_pagamento, int(parcelas)
+                                    user_id, "gasto", val_g, cat_g.id, acc_g.id, 
+                                    desc_g, dt_compra, dt_venc, int(qtd_parc)
                                 )
-                                st.toast("Despesa Salva!", icon="💸")
+                                st.toast("Despesa salva!", icon="💸")
+                                
+                                # Limpa campos resetando as keys
+                                limpar_campos(["new_desp_val", "new_desp_desc", "new_desp_pago", "new_desp_parc"])
                                 time.sleep(0.5)
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Erro: {e}")
 
         # ==================================================
-        # 2. NOVA RECEITA
+        # 2. NOVA RECEITA (SEM FORMULÁRIO - REATIVO)
         # ==================================================
-        with tab_receita:
+        with tab_rec:
             if not cats_renda:
                 st.warning("⚠️ Cadastre categorias de RECEITA.")
             else:
+                st.subheader("Registrar Entrada")
                 with st.container(border=True):
-                    st.subheader("💰 Registrar Entrada")
-                    
-                    c1, c2 = st.columns([1, 2])
-                    valor_r = c1.number_input("Valor (R$)", min_value=0.01, step=100.0, format="%.2f", key="v_renda")
-                    desc_r = c2.text_input("Descrição", placeholder="Ex: Salário...", key="d_renda")
+                    # Campos diretos (sem st.form)
+                    r1, r2 = st.columns([1, 2])
+                    val_r = r1.number_input("Valor (R$)", min_value=0.01, step=100.0, format="%.2f", key="new_rec_val")
+                    desc_r = r2.text_input("Descrição", placeholder="Ex: Salário", key="new_rec_desc")
 
-                    c3, c4, c5 = st.columns(3)
-                    dt_rec = c3.date_input("Data Recebimento", value=date.today(), key="dt_renda")
-                    cat_r = c4.selectbox("Categoria", cats_renda, format_func=lambda x: x.name, key="cat_renda")
-                    acc_r = c5.selectbox("Conta", contas, format_func=lambda x: x.name, key="acc_renda")
+                    r3, r4, r5 = st.columns(3)
+                    dt_r = r3.date_input("Data Recebimento", value=date.today(), key="new_rec_dt")
+                    cat_r = r4.selectbox("Categoria", cats_renda, format_func=lambda x: x.name, key="new_rec_cat")
+                    acc_r = r5.selectbox("Conta", contas, format_func=lambda x: x.name, key="new_rec_acc")
 
                     st.write("")
-                    if st.button("🟢 Confirmar Receita", type="primary", use_container_width=True):
+                    
+                    if st.button("🟢 Salvar Receita", type="primary"):
                         if not desc_r:
                             st.error("Descrição obrigatória.")
                         else:
-                            srv_trans.registrar(
-                                user_id, "renda", valor_r, cat_r.id, acc_r.id, 
-                                desc_r, dt_rec, dt_rec, 1
-                            )
-                            st.toast("Receita Salva!", icon="💰")
-                            time.sleep(0.5)
-                            st.rerun()
+                            try:
+                                srv_trans.registrar(
+                                    user_id, "renda", val_r, cat_r.id, acc_r.id, 
+                                    desc_r, dt_r, dt_r, 1
+                                )
+                                st.toast("Receita salva!", icon="💰")
+                                
+                                # Limpa campos
+                                limpar_campos(["new_rec_val", "new_rec_desc"])
+                                time.sleep(0.5)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro: {e}")
 
         # ==================================================
-        # 3. EXTRATO E EDIÇÃO
+        # 3. EXTRATO E EDIÇÃO (SEM FORMULÁRIO)
         # ==================================================
-        with tab_extrato:
+        with tab_ext:
             df = srv_trans.df_usuario(user_id)
             if df.empty:
                 st.info("Sem lançamentos.")
             else:
-                st.subheader("📋 Histórico e Edição")
                 c_sel, c_edit = st.columns([1, 2])
-
                 with c_sel:
-                    # Selectbox formatado
+                    # Selectbox para escolher o item
                     opcoes = df.apply(lambda x: f"{'🔴' if x['type']=='gasto' else '🟢'} {x['description']} | R$ {x['amount']:.2f}", axis=1).tolist()
                     escolha = st.selectbox("Selecione para editar:", opcoes)
                     
-                    # Recupera ID
                     try:
                         idx_sel = opcoes.index(escolha)
-                        linha_atual = df.iloc[idx_sel]
-                        id_escolhido = int(linha_atual["id"])
+                        row = df.iloc[idx_sel]
+                        id_sel = int(row["id"])
                     except: st.stop()
 
                 with c_edit:
                     with st.container(border=True):
-                        st.write(f"**Editando ID: {id_escolhido}**")
-                        with st.form("edit_form"):
-                            ce1, ce2 = st.columns(2)
-                            n_desc = ce1.text_input("Descrição", linha_atual["description"])
-                            # CORREÇÃO AQUI: Especificando value=... explicitamente
-                            n_val = ce2.number_input("Valor", value=float(linha_atual["amount"]), min_value=0.01)
-                            
-                            ce3, ce4, ce5 = st.columns(3)
-                            n_dt = ce3.date_input("Data", pd.to_datetime(linha_atual["payment_date"]).date())
-                            
-                            # Índices seguros
-                            try: ix_c = next(i for i,c in enumerate(cats_all) if c.id == linha_atual["category_id"])
-                            except: ix_c = 0
-                            try: ix_a = next(i for i,a in enumerate(contas) if a.id == linha_atual["account_id"])
-                            except: ix_a = 0
+                        st.markdown(f"**Editando ID {id_sel}**")
+                        
+                        # Edição direta (sem st.form)
+                        ce1, ce2 = st.columns(2)
+                        
+                        # Usamos 'value' para pré-popular com os dados do banco
+                        # O key é fixo + ID para garantir unicidade se mudar de item
+                        k_suffix = f"_{id_sel}"
+                        
+                        n_desc = ce1.text_input("Descrição", value=row["description"], key=f"ed_desc{k_suffix}")
+                        n_val = ce2.number_input("Valor", value=float(row["amount"]), min_value=0.01, key=f"ed_val{k_suffix}")
+                        
+                        ce3, ce4, ce5 = st.columns(3)
+                        n_dt = ce3.date_input("Data", value=pd.to_datetime(row["payment_date"]).date(), key=f"ed_dt{k_suffix}")
+                        
+                        # Índices para selectbox
+                        try: ix_c = next(i for i,c in enumerate(cats_all) if c.id == row["category_id"])
+                        except: ix_c = 0
+                        try: ix_a = next(i for i,a in enumerate(contas) if a.id == row["account_id"])
+                        except: ix_a = 0
 
-                            n_cat = ce4.selectbox("Categoria", cats_all, format_func=lambda x:x.name, index=ix_c)
-                            n_acc = ce5.selectbox("Conta", contas, format_func=lambda x:x.name, index=ix_a)
+                        n_cat = ce4.selectbox("Categoria", cats_all, format_func=lambda x:x.name, index=ix_c, key=f"ed_cat{k_suffix}")
+                        n_acc = ce5.selectbox("Conta", contas, format_func=lambda x:x.name, index=ix_a, key=f"ed_acc{k_suffix}")
 
-                            save = st.form_submit_button("💾 Salvar", type="primary", use_container_width=True)
-                            if save:
-                                srv_trans.atualizar(user_id, id_escolhido, n_val, n_desc, n_dt, n_cat.id, n_acc.id)
-                                st.toast("Atualizado!")
-                                st.rerun()
+                        st.write("")
+                        col_b1, col_b2 = st.columns(2)
+                        
+                        if col_b1.button("💾 Salvar Alterações", type="primary", key=f"btn_save{k_suffix}"):
+                            srv_trans.atualizar(user_id, id_sel, n_val, n_desc, n_dt, n_cat.id, n_acc.id)
+                            st.toast("Atualizado!")
+                            time.sleep(0.5)
+                            st.rerun()
 
-                        if st.button("🗑️ Excluir Item", key="bt_del_item", use_container_width=True):
-                            srv_trans.deletar(user_id, id_escolhido)
+                        if col_b2.button("🗑️ Excluir Item", key=f"btn_del{k_suffix}"):
+                            srv_trans.deletar(user_id, id_sel)
                             st.success("Excluído.")
                             time.sleep(0.5)
                             st.rerun()
 
+                st.divider()
                 st.dataframe(df[["payment_date", "description", "category", "amount", "account_name", "type"]], use_container_width=True, hide_index=True)
 
         # ==================================================
-        # 4. CADASTROS
+        # 4. CADASTROS (SEM FORMULÁRIO)
         # ==================================================
-        with tab_cadastros:
-            st.subheader("🛠️ Cadastros Básicos")
+        with tab_cad:
+            st.subheader("Cadastros Básicos")
             c1, c2 = st.columns(2)
+            
             with c1:
                 with st.container(border=True):
                     st.write("**Nova Conta**")
-                    nome_acc = st.text_input("Nome da Conta", key="n_acc_new")
+                    nome_acc = st.text_input("Nome da Conta", key="new_acc_name")
                     if st.button("Criar Conta"):
                         if nome_acc: 
                             srv_acc.criar(user_id, nome_acc)
+                            limpar_campos(["new_acc_name"])
                             st.rerun()
+            
             with c2:
                 with st.container(border=True):
                     st.write("**Nova Categoria**")
-                    nome_cat = st.text_input("Nome da Categoria", key="n_cat_new")
-                    tipo_cat = st.radio("Tipo", ["gasto", "renda"], horizontal=True, key="t_cat_new")
+                    nome_cat = st.text_input("Nome da Categoria", key="new_cat_name")
+                    tipo_cat = st.radio("Tipo", ["gasto", "renda"], horizontal=True, key="new_cat_type")
                     if st.button("Criar Categoria"):
                         if nome_cat:
                             srv_cat.adicionar(user_id, nome_cat, tipo_cat)
+                            limpar_campos(["new_cat_name"])
                             st.rerun()
             
-            st.markdown("---")
-            with st.expander("🚨 ZONA DE PERIGO (Limpar Tudo)"):
-                st.warning("Isso apaga TODOS os lançamentos. Não afeta cadastros.")
-                confirma = st.checkbox("Tenho certeza.")
-                if st.button("💣 LIMPAR DADOS", type="primary", disabled=not confirma):
-                    srv_trans.limpar_todos(user_id)
-                    st.success("Dados limpos.")
-                    time.sleep(1)
+            st.divider()
+            
+            # Listagem e Deleção
+            df_all = srv_trans.df_usuario(user_id)
+            
+            def card_del(item_id, nome, tipo, srv):
+                uso = len(df_all[df_all['account_name' if tipo=="Conta" else 'category'] == nome])
+                c_a, c_b = st.columns([4, 1])
+                c_a.text(f"{nome} ({uso} usos)")
+                if c_b.button("🗑️", key=f"del_cad_{tipo}_{item_id}", disabled=(uso>0)):
+                    srv.deletar(user_id, item_id)
                     st.rerun()
+
+            co1, co2, co3 = st.columns(3)
+            with co1:
+                st.caption("Contas")
+                for c in contas: card_del(c.id, c.name, "Conta", srv_acc)
+            with co2:
+                st.caption("Gastos")
+                for c in cats_gasto: card_del(c.id, c.name, "Cat", srv_cat)
+            with co3:
+                st.caption("Receitas")
+                for c in cats_renda: card_del(c.id, c.name, "Cat", srv_cat)
+            
+            st.divider()
+            with st.expander("🚨 Zona de Perigo"):
+                if st.checkbox("Liberar exclusão total"):
+                    if st.button("🔥 APAGAR TODOS OS DADOS", type="primary"):
+                        srv_trans.limpar_todos(user_id)
+                        st.success("Limpo.")
+                        time.sleep(1)
+                        st.rerun()
 
 if __name__ == "__main__":
     main()
