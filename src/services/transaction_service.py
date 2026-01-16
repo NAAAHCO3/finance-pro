@@ -21,53 +21,49 @@ class TransactionService:
         user_id: int,
         tipo: str,
         valor_total: Any,
-        category_id: int,  # ALTERADO: Recebe ID direto
-        account_id: int,   # ALTERADO: Recebe ID direto
+        category_id: int,  # ID direto
+        account_id: int,   # ID direto
         descricao: str = "",
         data_compra: Optional[date] = None,
         data_pagamento: Optional[date] = None,
         parcelas: int = 1
     ) -> None:
         """
-        Registra transações usando IDs diretos (Performance e Segurança melhoradas).
+        Registra transações usando IDs diretos.
         """
         tipo_normalizado = self._validar_tipo(tipo)
         valor_num = self._normalizar_valor(valor_total)
         
-        # Datas padrão
         dt_compra = data_compra if data_compra else date.today()
         dt_pagamento_inicial = data_pagamento if data_pagamento else dt_compra
 
         try:
-            # LÓGICA DE PARCELAMENTO
             if parcelas > 1:
                 valor_parcela = valor_num / parcelas
-                
                 for i in range(parcelas):
-                    dt_vencimento = dt_pagamento_inicial + relativedelta(months=i)
-                    tag_parcela = f"{i+1}/{parcelas}"
-                    desc_final = f"{descricao} ({tag_parcela})" if descricao else f"Parcela {tag_parcela}"
+                    dt_venc = dt_pagamento_inicial + relativedelta(months=i)
+                    tag = f"{i+1}/{parcelas}"
+                    desc_final = f"{descricao} ({tag})" if descricao else f"Parcela {tag}"
 
                     nova = Transaction(
                         user_id=user_id,
                         type=tipo_normalizado,
                         amount=valor_parcela,
-                        category_id=category_id, # ID direto
-                        account_id=account_id,   # ID direto
+                        category_id=category_id,
+                        account_id=account_id,
                         description=desc_final,
                         date=dt_compra,           
-                        payment_date=dt_vencimento,
-                        installment=tag_parcela
+                        payment_date=dt_venc,
+                        installment=tag
                     )
                     self.db.add(nova)
             else:
-                # Transação única
                 nova = Transaction(
                     user_id=user_id,
                     type=tipo_normalizado,
                     amount=valor_num,
-                    category_id=category_id, # ID direto
-                    account_id=account_id,   # ID direto
+                    category_id=category_id,
+                    account_id=account_id,
                     description=descricao,
                     date=dt_compra,
                     payment_date=dt_pagamento_inicial,
@@ -83,6 +79,43 @@ class TransactionService:
             logger.exception("Erro ao registrar transação")
             raise e
 
+    def atualizar(
+        self, 
+        user_id: int, 
+        transaction_id: int, 
+        novo_valor: float, 
+        nova_desc: str, 
+        nova_data_pg: date, 
+        novo_cat_id: int, 
+        novo_acc_id: int
+    ) -> bool:
+        """
+        Permite editar um lançamento existente (Usado no lancamentos.py).
+        """
+        try:
+            t = self.db.query(Transaction).filter(
+                Transaction.id == transaction_id, 
+                Transaction.user_id == user_id
+            ).first()
+            
+            if not t: 
+                return False
+            
+            # Atualiza os campos
+            t.amount = float(novo_valor)
+            t.description = nova_desc
+            t.payment_date = nova_data_pg
+            t.category_id = novo_cat_id
+            t.account_id = novo_acc_id
+            
+            self.db.commit()
+            logger.info("Transação %s atualizada", transaction_id)
+            return True
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"Erro ao atualizar transação: {e}")
+            return False
+
     def df_usuario(self, user_id: int) -> pd.DataFrame:
         try:
             query = (
@@ -94,6 +127,9 @@ class TransactionService:
                     Transaction.amount,
                     Transaction.description,
                     Transaction.installment,
+                    # IMPORTANTE: Trazendo IDs para permitir a edição correta no frontend
+                    Transaction.category_id,
+                    Transaction.account_id,
                     Category.name.label("category"),
                     Account.name.label("account_name")
                 )
