@@ -28,6 +28,13 @@ def require_login():
 def brl(v):
     return f"R$ {v:,.2f}"
 
+def safe_index(lista, attr, valor):
+    """Retorna índice seguro para selectbox"""
+    try:
+        return next(i for i, x in enumerate(lista) if getattr(x, attr) == valor)
+    except StopIteration:
+        return 0
+
 # ======================================================
 # APP
 # ======================================================
@@ -60,147 +67,140 @@ def main():
             return
 
         # ==================================================
-        # 🔴 DESPESA (CORRIGIDO)
+        # 🔴 DESPESA
         # ==================================================
         with tab_desp:
             st.subheader("💸 Registrar Despesa")
 
             if not cats_gasto:
                 st.warning("Cadastre categorias de GASTO.")
-                return
+            else:
+                cflag1, cflag2 = st.columns(2)
+                pago = cflag1.checkbox("Pago hoje?", value=True, key="gasto_pago")
+                parcelado = cflag2.checkbox("Compra parcelada?", key="gasto_parcelado")
 
-            # 👉 CONTROLES DINÂMICOS (FORA DO FORM)
-            cflag1, cflag2 = st.columns(2)
-            pago = cflag1.checkbox("Pago hoje?", value=True, key="gasto_pago")
-            parcelado = cflag2.checkbox("Compra parcelada?", key="gasto_parcelado")
+                with st.form("form_despesa", clear_on_submit=True):
+                    c1, c2 = st.columns([1, 2])
+                    valor = c1.number_input("Valor (R$)", min_value=0.01, step=10.0, format="%.2f")
+                    desc = c2.text_input("Descrição")
 
-            # 👉 FORMULÁRIO
-            with st.form("form_despesa", clear_on_submit=True):
-                c1, c2 = st.columns([1, 2])
-                valor = c1.number_input("Valor (R$)", min_value=0.01, step=10.0, format="%.2f")
-                desc = c2.text_input("Descrição")
+                    c3, c4, c5 = st.columns(3)
+                    data_compra = c3.date_input("Data da Compra", value=date.today())
+                    cat = c4.selectbox("Categoria", cats_gasto, format_func=lambda x: x.name)
+                    acc = c5.selectbox("Conta", contas, format_func=lambda x: x.name)
 
-                c3, c4, c5 = st.columns(3)
-                data_compra = c3.date_input("Data da Compra", value=date.today())
-                cat = c4.selectbox("Categoria", cats_gasto, format_func=lambda x: x.name)
-                acc = c5.selectbox("Conta", contas, format_func=lambda x: x.name)
+                    data_pagamento = data_compra
+                    parcelas = 1
 
-                parcelas = 1
-                data_pagamento = data_compra
+                    if not pago:
+                        data_pagamento = st.date_input("Data de Vencimento", value=data_compra)
 
-                if not pago:
-                    data_pagamento = st.date_input("Data de Vencimento", value=data_compra)
-
-                if parcelado:
-                    parcelas = st.number_input(
-                        "Número de Parcelas",
-                        min_value=2,
-                        max_value=60,
-                        value=2
-                    )
-                    if valor > 0:
+                    if parcelado:
+                        parcelas = st.number_input("Número de Parcelas", 2, 60, 2)
                         st.caption(f"💳 {parcelas}x de {brl(valor / parcelas)}")
 
-                if st.form_submit_button("🔴 Salvar Despesa", type="primary", use_container_width=True):
-                    srv_trans.registrar(
-                        user_id=user_id,
-                        tipo="gasto",
-                        valor_total=valor,
-                        category_id=cat.id,
-                        account_id=acc.id,
-                        descricao=desc,
-                        data_compra=data_compra,
-                        data_pagamento=data_pagamento,
-                        parcelas=int(parcelas)
-                    )
-                    st.toast("Despesa registrada!", icon="💸")
-                    time.sleep(0.4)
-                    st.rerun()
+                    if st.form_submit_button("🔴 Salvar Despesa", type="primary", use_container_width=True):
+                        srv_trans.registrar(
+                            user_id=user_id,
+                            tipo="gasto",
+                            valor_total=valor,
+                            category_id=cat.id,
+                            account_id=acc.id,
+                            descricao=desc,
+                            data_compra=data_compra,
+                            data_pagamento=data_pagamento,
+                            parcelas=int(parcelas)
+                        )
+                        st.toast("Despesa registrada!", icon="💸")
+                        time.sleep(0.3)
+                        st.rerun()
 
         # ==================================================
-        # 🟢 RECEITA (sem checkbox → ok)
+        # 🟢 RECEITA
         # ==================================================
         with tab_rec:
             st.subheader("💰 Registrar Receita")
 
             if not cats_renda:
                 st.warning("Cadastre categorias de RECEITA.")
-                return
+            else:
+                with st.form("form_receita", clear_on_submit=True):
+                    c1, c2 = st.columns([1, 2])
+                    valor = c1.number_input("Valor (R$)", min_value=0.01, step=100.0, format="%.2f")
+                    desc = c2.text_input("Descrição")
 
-            with st.form("form_receita", clear_on_submit=True):
-                c1, c2 = st.columns([1, 2])
-                valor = c1.number_input("Valor (R$)", min_value=0.01, step=100.0, format="%.2f")
-                desc = c2.text_input("Descrição")
+                    c3, c4, c5 = st.columns(3)
+                    data = c3.date_input("Data do Recebimento", value=date.today())
+                    cat = c4.selectbox("Categoria", cats_renda, format_func=lambda x: x.name)
+                    acc = c5.selectbox("Conta", contas, format_func=lambda x: x.name)
 
-                c3, c4, c5 = st.columns(3)
-                data = c3.date_input("Data do Recebimento", value=date.today())
-                cat = c4.selectbox("Categoria", cats_renda, format_func=lambda x: x.name)
-                acc = c5.selectbox("Conta", contas, format_func=lambda x: x.name)
-
-                if st.form_submit_button("🟢 Salvar Receita", type="primary", use_container_width=True):
-                    srv_trans.registrar(
-                        user_id=user_id,
-                        tipo="renda",
-                        valor_total=valor,
-                        category_id=cat.id,
-                        account_id=acc.id,
-                        descricao=desc,
-                        data_compra=data,
-                        data_pagamento=data,
-                        parcelas=1
-                    )
-                    st.toast("Receita registrada!", icon="💰")
-                    time.sleep(0.4)
-                    st.rerun()
+                    if st.form_submit_button("🟢 Salvar Receita", type="primary", use_container_width=True):
+                        srv_trans.registrar(
+                            user_id=user_id,
+                            tipo="renda",
+                            valor_total=valor,
+                            category_id=cat.id,
+                            account_id=acc.id,
+                            descricao=desc,
+                            data_compra=data,
+                            data_pagamento=data,
+                            parcelas=1
+                        )
+                        st.toast("Receita registrada!", icon="💰")
+                        time.sleep(0.3)
+                        st.rerun()
 
         # ==================================================
-        # 📄 EXTRATO
+        # 📄 EXTRATO (BUG CORRIGIDO)
         # ==================================================
         with tab_ext:
             df = srv_trans.df_usuario(user_id)
 
             if df.empty:
                 st.info("Nenhum lançamento.")
-                return
+            else:
+                escolha = st.selectbox(
+                    "Selecione um lançamento",
+                    df.to_dict("records"),
+                    format_func=lambda x: f"{'🔴' if x['type']=='gasto' else '🟢'} {x['description']} | {brl(x['amount'])}"
+                )
 
-            escolha = st.selectbox(
-                "Selecione um lançamento",
-                df.to_dict("records"),
-                format_func=lambda x: f"{'🔴' if x['type']=='gasto' else '🟢'} {x['description']} | {brl(x['amount'])}"
-            )
+                with st.form("editar"):
+                    c1, c2 = st.columns(2)
+                    desc = c1.text_input("Descrição", escolha["description"])
+                    val = c2.number_input("Valor", min_value=0.01, value=float(escolha["amount"]))
 
-            with st.form("editar"):
-                c1, c2 = st.columns(2)
-                desc = c1.text_input("Descrição", escolha["description"])
-                val = c2.number_input("Valor", min_value=0.01, value=float(escolha["amount"]))
+                    c3, c4, c5 = st.columns(3)
+                    data = c3.date_input("Data", pd.to_datetime(escolha["payment_date"]).date())
 
-                c3, c4, c5 = st.columns(3)
-                data = c3.date_input("Data", pd.to_datetime(escolha["payment_date"]).date())
-                cat = c4.selectbox("Categoria", categorias, format_func=lambda x: x.name)
-                acc = c5.selectbox("Conta", contas, format_func=lambda x: x.name)
+                    idx_cat = safe_index(categorias, "id", escolha["category_id"])
+                    idx_acc = safe_index(contas, "id", escolha["account_id"])
 
-                cb1, cb2 = st.columns(2)
+                    cat = c4.selectbox("Categoria", categorias, index=idx_cat, format_func=lambda x: x.name)
+                    acc = c5.selectbox("Conta", contas, index=idx_acc, format_func=lambda x: x.name)
 
-                if cb1.form_submit_button("Salvar", type="primary", use_container_width=True):
-                    srv_trans.atualizar(
-                        user_id,
-                        escolha["id"],
-                        val,
-                        desc,
-                        data,
-                        cat.id,
-                        acc.id
-                    )
-                    st.toast("Atualizado!", icon="🔄")
-                    st.rerun()
+                    b1, b2 = st.columns(2)
 
-                if cb2.form_submit_button("Excluir", use_container_width=True):
-                    srv_trans.deletar(user_id, escolha["id"])
-                    st.success("Excluído.")
-                    st.rerun()
+                    if b1.form_submit_button("Salvar", type="primary", use_container_width=True):
+                        srv_trans.atualizar(
+                            user_id,
+                            escolha["id"],
+                            val,
+                            desc,
+                            data,
+                            cat.id,
+                            acc.id
+                        )
+                        st.toast("Atualizado!", icon="🔄")
+                        st.rerun()
 
-            st.divider()
-            st.dataframe(df, use_container_width=True)
+                    if b2.form_submit_button("Excluir", use_container_width=True):
+                        srv_trans.deletar(user_id, escolha["id"])
+                        st.toast("Excluído!", icon="🗑️")
+                        st.rerun()
+
+                st.divider()
+                st.dataframe(df, use_container_width=True)
 
         # ==================================================
         # ⚙️ CADASTROS
